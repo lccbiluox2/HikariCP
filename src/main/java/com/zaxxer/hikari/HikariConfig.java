@@ -218,7 +218,16 @@ public class HikariConfig implements HikariConfigMXBean
       return leakDetectionThreshold;
    }
 
-   /** {@inheritDoc} */
+   /** {@inheritDoc}
+    *
+    *
+    *     如果leakDetectionThreshold的值大于0且当前不是单元测试模式，则会进一步判断：如
+    * 果leakDetectionThreshold值小于2秒或者leakDetectionThreshold值大于maxLifetime连接最
+    * 长生命周期，那么leakDetectionThreshold会被重置为O。因此，若要leakDetectionThreshold
+    * 配置项生效，leakDetectionThreshold的配置值必须大于0且不能小于2秒，而且
+    * leakDetectionThreshold的值不能超过maxLifetime的值（maxLifetime默认值为1800000毫秒
+    * =30分钟）。
+    * */
    @Override
    public void setLeakDetectionThreshold(long leakDetectionThresholdMs)
    {
@@ -320,7 +329,14 @@ public class HikariConfig implements HikariConfigMXBean
       return validationTimeout;
    }
 
-   /** {@inheritDoc} */
+   /** {@inheritDoc}
+    *
+    *
+    *     validationTimeout属性控制连接测试活动的最长时间。这个值必须小于connection
+    * Timeout。最低可接受的验证超时时间为250ms。默认值为5000。
+    * {@inheritDoc}
+    *
+    **/
    @Override
    public void setValidationTimeout(long validationTimeoutMs)
    {
@@ -545,6 +561,31 @@ public class HikariConfig implements HikariConfigMXBean
     * Set whether or not pool suspension is allowed.  There is a performance
     * impact when pool suspension is enabled.  Unless you need it (for a
     * redundancy system for example) do not enable it.
+    *
+    *     该属性控制池是否可以通过JMX暂停和恢复，默认值为false。这对于某些故障转移自
+    * 动化方案很有用。当池被暂停时，调用getConnectionO将不会超时，并将一直保持到池恢
+    * 复为止。
+    *     这里要特别说明一下，必须开启“allowPoolSuspension:true”，且必须在“registerMbeans:
+    * true”的情况下才能通过MBeanProxy调节softEvictConnectionsO和suspendPoolO/resume-
+    * PoolOmethods
+    *
+    *     关于这个参数的用途，BrettWooldridge在一个issue里是这么回答的。
+    *     allowPoolSuspension是一个暂停模式，实战中使用该配置主要分为如下4步：
+    *     1）暂停数据库连接池。
+    *     2）更改数据库连接池的配置，或者更改DNS配置（指向新的主服务器）。
+    *     3）软驱逐现有的连接。
+    *     4）恢复数据库连接池。
+    *     我做过试验，Suspend期间getConnection确实不会超时，SQL执行都会被保留下来；
+    * 软驱逐现有连接之后，一直保持到池恢复Resume时，这些SQL依然会继续执行。也就是
+    * 说用户并不会丢数据。
+    *     但是在实际生产中，要想不影响业务很难，即使继续执行，业务也可能会超时。
+    *     故障注人是中间件开发时应该做的，这个功能可以使用chaosmonkey来模拟数据库连
+    * 接故障。但是在监控过程中我发现，hikaricp_pending_threads指标并没有提升，MBean的
+    * threadAwaitingConnections也没有改变，所以以后故障演练可以不用搞得那么复杂，模拟数
+    * 据连接故障收拢在中间件内部可能更好。对于这个参数，中间件还需要自研以增加模拟抛
+    * 异常或对一些监控指标进行监控。
+    *
+    * 最后值得注意的是，长期阻塞该参数会存在让微服务卡死的风险。
     *
     * @param isAllowPoolSuspension the desired pool suspension allowance
     */
@@ -982,8 +1023,10 @@ public class HikariConfig implements HikariConfigMXBean
    public void validate()
    {
       if (poolName == null) {
+         // 如果没有配置 按照顺序生成
          poolName = generatePoolName();
       }
+      // 如果包含 冒号 那么异常
       else if (isRegisterMbeans && poolName.contains(":")) {
          throw new IllegalArgumentException("poolName cannot contain ':' when used with JMX");
       }
@@ -1039,6 +1082,7 @@ public class HikariConfig implements HikariConfigMXBean
    {
       if (maxLifetime != 0 && maxLifetime < SECONDS.toMillis(30)) {
          LOGGER.warn("{} - maxLifetime is less than 30000ms, setting to default {}ms.", poolName, MAX_LIFETIME);
+         // 若 maxLifetime 不等于 0 或者 小于 30 秒 则重置为30分钟
          maxLifetime = MAX_LIFETIME;
       }
 

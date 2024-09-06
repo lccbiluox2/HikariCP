@@ -184,6 +184,7 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
 
             final long now = currentTime();
             if (poolEntry.isMarkedEvicted() || (elapsedMillis(poolEntry.lastAccessed, now) > aliveBypassWindowMs && !isConnectionAlive(poolEntry.connection))) {
+               // 这个错误在 HikariCP数据库连接池实战 有专门的讲解
                closeConnection(poolEntry, poolEntry.isMarkedEvicted() ? EVICTED_CONNECTION_MESSAGE : DEAD_CONNECTION_MESSAGE);
                timeout = hardTimeout - elapsedMillis(startTime);
             }
@@ -469,6 +470,18 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
    /**
     * Creating new poolEntry.  If maxLifetime is configured, create a future End-of-life task with 2.5% variance from
     * the maxLifetime time to ensure there is no massive die-off of Connections in the pool.
+    *
+    * 編 内 连 接 生 成 的 时 候 让 每 个 连 接 的 最 大 存 活 时 间 错 开 一 点 ，
+    * 防 止 同 时 过 期 ， 加 一 点 点 随 机 因 素 ， 防 止 一 件 事 情 大 量 同 时 发 生 ，
+    * 比 如 防 止 HikariCP 的 连 接 同 时 大 量 死 亡 。 如 果 大 于 10 000 （ 就 是 大 于 10
+    * 秒 钟 ） ， 就 执 行 这 个 策 略 ， 用 maxLifetime 的 2 ． 5 ％ 的 时 间 和 0 之 间
+    * 的 随 机 数 来 随 机 设 定 一 个 variance ， 在 maxLifetime - variance 之 后 触
+    * 发 evicto 比 如 ， 配 置 maxLifetime 为 巧 分 钟 时 ， HikariCP 为 每 个 连 接 最
+    * 大 寿 命 注 人 了 2 巧 ％ 的 变 化 ， 即 寿 命 为 巧 分 钟 时 ， 相 当 于 可 有 22 ． 5 秒
+    * 的 变 化 。 在 创 建 poolEntry 的 时 候 ， 会 注 册 一 个 延 时 任 务 ， 在 连 接 存 活
+    * 时 间 将 要 到 达 maxLifetime 时 触 发 evit （ 标 记 连 接 池 中 的 连 接 不 可 用 ） ，
+    * 用 来 防 止 出 现 大 面 积 连 接 因 为 maxl ifetime 一 样 而 同 时 失 效 ， 从 而 造
+    * 成 HikariCP 数 据 库 连 接 池 不 稳 定 的 情 况 。
     */
    private PoolEntry createPoolEntry()
    {
@@ -626,6 +639,10 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
     * an Executor and configure it.
     *
     * @return either the user specified {@link ScheduledExecutorService}, or the one we created
+    *
+    * 连接泄露检测的原理就是：连接有借有还，HikariCP是每借用一个connection则会创
+    * 建一个延时的定时任务，在归还连接、连接出异常或者用户手动调用evictConnection时取
+    * 消这个定时任务。
     */
    private ScheduledExecutorService initializeHouseKeepingExecutorService()
    {
@@ -762,6 +779,14 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
    {
       private volatile long previous = plusMillis(currentTime(), -housekeepingPeriodMs);
 
+      /**
+       * 下述代码是HikariCP故意设计的。HikariCP不会删除低于minimumIdle限制的连接，
+       * 即使它的闲置时间超过idleTimeout。这也就是“一旦池达到minimumIdle连接，即使空闲，
+       * 连接也将不再退役”所表达的意思。idleTimeout并不是数据库连接池生命周期管理的属性，
+       * 它唯一的目的就是对池的大小进行管理，允许池缩小到minimumIdle水平，连接生命周期
+       * 其实完全是由maxLifetime进行管理的。idleTimeout的初衷是保证数据库服务器的性能，
+       * 使得在多个应用程序共享时节省连接资源。
+       */
       @Override
       public void run()
       {
@@ -775,6 +800,7 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
             final long idleTimeout = config.getIdleTimeout();
             final long now = currentTime();
 
+            // 检测逆行时间，根据NTP规范允许+128秒
             // Detect retrograde time, allowing +128ms as per NTP spec.
             if (plusMillis(now, 128) < plusMillis(previous, housekeepingPeriodMs)) {
                logger.warn("{} - Retrograde clock change detected (housekeeper delta={}), soft-evicting connections from pool.",
@@ -785,6 +811,7 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
             }
             else if (now > plusMillis(previous, (3 * housekeepingPeriodMs) / 2)) {
                // No point evicting for forward clock motion, this merely accelerates connection retirement anyway
+               // 对于正向时钟允许，没有必要退出，这只是加速了连接的退役
                logger.warn("{} - Thread starvation or clock leap detected (housekeeper delta={}).", poolName, elapsedDisplayString(previous, now));
             }
 
@@ -807,6 +834,7 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
 
             logPoolState(afterPrefix);
 
+            // 尽量保持最少得链接
             fillPool(); // Try to maintain minimum connections
          }
          catch (Exception e) {

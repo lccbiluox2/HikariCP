@@ -43,6 +43,37 @@ public final class JavassistProxyFactory
    private static ClassPool classPool;
    private static String genDirectory = "";
 
+   /**
+    *     ClassPoolpool=ClassPool.getDefaultO是Javassist的起手式，代表获得类池，后续会
+    * 通过这个类池执行makeClass创建类的操作，这个类可以添加属性、接口、方法、构造器
+    * 等，最后通过writeFile的方式写人工作空间。这些工作基本上都是在generateProxyClass的
+    * 方法里做的。从上述代码中可以看到，ProxyConnection、ProxyStatement、ProxyPrepared-
+    * Statement、ProxyCallableStatement、ProxyResultSet五个代理类都做了处理，但是不同的地
+    * 方是，前3个转换为了delegate.method($$)，后两个转换为了((cast)delegate).method($$),
+    * 因为ProxyCallableStatement、ProxyResultSet是两个抽象的继承类。
+    *
+    * HikariCP使用了动态代理字节码技术Javassist进行了5个核心JDBC代理
+    * 类的创建及重命名，这些代理类除了原封不动地封装了JDBC原始的特性，HikariCP还增
+    * 加了一些与状态管理、连接管理、异常处理、资源清理等相关的定制化内容。
+    *
+    * 墨既然HikariCP已经编写了ProxyConnection，那么Javaassist再次生成HikariProxy-
+    *     考
+    *     Connection的目的是什么？
+    *     我们可以发现，ProxyConnection已经做了很多的事情，HikariProxy只是为每个方法添
+    * 加了一个trycatch块而已，那么再次使用字节码的用意何在呢？
+    *     代理委托给真正的驱动程序类。某些代理（比如ResultSet的代理）仅仅拦截一些方法，
+    * 但是如果没有代码生成，代理必须实现所有委托给包装实例的50多个方法。基于反射的代
+    * 码生成，还意味着当新的JDK版本向现有接口引人新的JDBC方法的时候，我们不需要做
+    * 任何额外的工作。从抽象的ProxyConnection类生成具体类，任何未被抽象类覆盖的方法，
+    * 以及抛出SQLException的方法都会使用如下代码生成委托，以允许检查异常，并查看是否
+    * 断开连接等错误。
+    *     try{
+    *     return delegate.method($$);
+    *     }catch（SQLException e){
+    *     throw checkException(e);
+    *     其副作用是：如果JDBC的API做了更改，HikariCP就没有那么灵活了，需要跟着修
+    * 改。不过至少到目前为止HikariCP还没有遇到过更新时JDBC大幅度向后不兼容的情况。
+    */
    public static void main(String... args) throws Exception {
       classPool = new ClassPool();
       classPool.importPackage("java.sql");
@@ -67,6 +98,13 @@ public final class JavassistProxyFactory
       modifyProxyFactory();
    }
 
+   /**
+    modifyProxyFactory方法则比较简单，它主要是将ProxyConnection、ProxyStatement、
+    * ProxyPreparedStatement、ProxyCallableStatement、ProxyResultSet 改名为ProxyConnection、
+    * ProxyStatement、ProxyPreparedStatement、ProxyCallableStatement、ProxyResultSet。代码
+    *
+    * @throws Exception
+    */
    private static void modifyProxyFactory() throws NotFoundException, CannotCompileException, IOException {
       System.out.println("Generating method bodies for com.zaxxer.hikari.proxy.ProxyFactory");
 
