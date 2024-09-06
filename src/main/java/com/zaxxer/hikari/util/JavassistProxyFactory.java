@@ -35,6 +35,7 @@ import java.util.Set;
  * instances of the generated proxies.
  *
  * @author Brett Wooldridge
+ *
  */
 public final class JavassistProxyFactory
 {
