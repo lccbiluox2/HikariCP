@@ -209,6 +209,21 @@ public abstract class ProxyConnection implements Connection
       return statement;
    }
 
+   /**
+    *     在上述close代码的第一部分，先直接关闭全部已经打开的连接，这里的Statement
+    * 是用FastList进行存储的。我们之前介绍过，JDBC对同一个Connection可能创建多个
+    * Statement，而后打开的Statement会先关闭，所以在这种情况下从尾部开始扫描将更合理。
+    * FastList从数组的尾部开始遍历，因此更为高效，它消除了范围检查并从尾部到头部执行移
+    * 除扫描。自定义数组类型（FastList）代替ArrayList，避免每次getO调用都要进行范围检
+    * 查，避免调用removeO时从头到尾进行扫描
+    *
+    *     除了进行get处理时，FastList的clear操作都是在代理类覆盖并重写时完成的，如果
+    * FastList中存储的Statement大于O，那么对于并没有置为ClosedConnection的CLOSED_
+    * CONNECTION都执行clear操作。如果在这个过程中产生异常，会取消ProxyLeakTask，
+    * 驱逐poolEntry，并标明（exceptionclosingStatements duringConnection.closeO)异常，最
+    * 后将代理重新设置为ClosedConnection.CLOSED_CONNECTION状态。在这个过程中，对
+    * Statement的操作ProxyStatement也做了一些处理。
+    */
    @SuppressWarnings("EmptyTryBlock")
    private synchronized void closeStatements()
    {
@@ -217,6 +232,7 @@ public abstract class ProxyConnection implements Connection
          for (int i = 0; i < size && delegate != ClosedConnection.CLOSED_CONNECTION; i++) {
             try (Statement ignored = openStatements.get(i)) {
                // automatic resource cleanup
+               // java8的自动清理
             }
             catch (SQLException e) {
                LOGGER.warn("{} - Connection {} marked as broken because of an exception closing open statements during Connection.close()",
@@ -480,6 +496,13 @@ public abstract class ProxyConnection implements Connection
    {
       static final Connection CLOSED_CONNECTION = getClosedConnection();
 
+      /**
+       *     Private只对isClosed、isValid、abort、close、toString等几个方法快速返回结果，而对其
+       * 他方法都直接抛出 SQLException“Connection is closed”。ProxyConnection执行override 以覆
+       * 盖并重写java.sql.Connection的close方法时就引I用了ClosedConnection这个内部static类。
+       *
+       * @return
+       */
       private static Connection getClosedConnection()
       {
          InvocationHandler handler = (proxy, method, args) -> {

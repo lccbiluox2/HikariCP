@@ -611,6 +611,13 @@ abstract class PoolBase
    /**
     * Set the loginTimeout on the specified DataSource.
     *
+    *     在PoolBase的构造函数中，执行了PoolBase内部的initializeDataSourceO方
+    * 法。在initializeDataSourceO中会判断当前DataSource是否为空，如果不为空，则调用
+    * setLoginTimeout方法将javax.sql.dataSource的loginTimeout初始化为Math.max(1,（int)
+    * MILLISECONDS.toSeconds（500L+connectionTimeout))，意思是connectionTimeout+500ms
+    * 转为秒数取整与1取三者中最大者。其构造器默认值是10，默认配置validate之后的值是
+    * 30，validate重置以后的值就是这个Math.max的结果。
+    *
     * @param dataSource the DataSource
     */
    private void setLoginTimeout(final DataSource dataSource)
