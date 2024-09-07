@@ -63,6 +63,7 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    private final CopyOnWriteArrayList<T> sharedList;
    private final boolean weakThreadLocals;
 
+   // 有限从这里取值，防止锁
    private final ThreadLocal<List<Object>> threadList;
    private final IBagStateListener listener;
    private final AtomicInteger waiters;
@@ -120,6 +121,7 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    public T borrow(long timeout, final TimeUnit timeUnit) throws InterruptedException
    {
       // Try the thread-local list first
+      // 先从 thrad local 中获取 减少锁
       final List<Object> list = threadList.get();
       for (int i = list.size() - 1; i >= 0; i--) {
          final Object entry = list.remove(i);

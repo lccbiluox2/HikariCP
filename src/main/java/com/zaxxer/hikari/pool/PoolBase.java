@@ -153,10 +153,12 @@ abstract class PoolBase
    {
       try {
          try {
+            // 设置网络超时时间
             setNetworkTimeout(connection, validationTimeout);
 
             final int validationSeconds = (int) Math.max(1000L, validationTimeout) / 1000;
 
+            // 使用jdbc的校验方法
             if (isUseJdbc4Validation) {
                return connection.isValid(validationSeconds);
             }
@@ -166,6 +168,7 @@ abstract class PoolBase
                   setQueryTimeout(statement, validationSeconds);
                }
 
+               // 执行 SELECT 1  校验连接师傅正常
                statement.execute(config.getConnectionTestQuery());
             }
          }

@@ -37,7 +37,7 @@ class ProxyLeakTask implements Runnable
    private ScheduledFuture<?> scheduledFuture;
    private String connectionName;
    private Exception exception;
-   private String threadName; 
+   private String threadName;
    private boolean isLeaked;
 
    static
@@ -76,11 +76,12 @@ class ProxyLeakTask implements Runnable
    {
       isLeaked = true;
 
-      final StackTraceElement[] stackTrace = exception.getStackTrace(); 
+      final StackTraceElement[] stackTrace = exception.getStackTrace();
       final StackTraceElement[] trace = new StackTraceElement[stackTrace.length - 5];
       System.arraycopy(stackTrace, 5, trace, 0, trace.length);
 
       exception.setStackTrace(trace);
+      // 如果我们不调用链接的close方法，那么这里会打印链接泄露
       LOGGER.warn("Connection leak detection triggered for {} on thread {}, stack trace follows", connectionName, threadName, exception);
    }
 

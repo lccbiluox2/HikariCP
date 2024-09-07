@@ -99,6 +99,7 @@ final class PoolEntry implements IConcurrentBagEntry
 
    Connection createProxyConnection(final ProxyLeakTask leakTask, final long now)
    {
+      // 这里要看编译后的代码饿了
       return ProxyFactory.getProxyConnection(this, connection, openStatements, leakTask, now, isReadOnly, isAutoCommit);
    }
 

@@ -177,12 +177,14 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
       try {
          long timeout = hardTimeout;
          do {
+            // 这里会一直尝试取值，取到九跳出 取不到就一直取
             PoolEntry poolEntry = connectionBag.borrow(timeout, MILLISECONDS);
             if (poolEntry == null) {
                break; // We timed out... break and throw exception
             }
 
             final long now = currentTime();
+            // 取到链接后 要判断链接是否有效
             if (poolEntry.isMarkedEvicted() || (elapsedMillis(poolEntry.lastAccessed, now) > aliveBypassWindowMs && !isConnectionAlive(poolEntry.connection))) {
                // 这个错误在 HikariCP数据库连接池实战 有专门的讲解
                closeConnection(poolEntry, poolEntry.isMarkedEvicted() ? EVICTED_CONNECTION_MESSAGE : DEAD_CONNECTION_MESSAGE);
@@ -526,10 +528,12 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
     */
    private synchronized void fillPool()
    {
+      // 计算我们应该还能创建多少链接
       final int connectionsToAdd = Math.min(config.getMaximumPoolSize() - getTotalConnections(), config.getMinimumIdle() - getIdleConnections())
                                    - addConnectionQueueReadOnlyView.size();
       if (connectionsToAdd <= 0) logger.debug("{} - Fill pool skipped, pool is at sufficient level.", poolName);
 
+      // 这里创建的时候，如果是最后的 要打印一下线程池的状态
       for (int i = 0; i < connectionsToAdd; i++) {
          addConnectionExecutor.submit((i < connectionsToAdd - 1) ? poolEntryCreator : postFillPoolEntryCreator);
       }
